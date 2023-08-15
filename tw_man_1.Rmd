@@ -1,0 +1,432 @@
+---
+title: "tw_man"
+author: "Sijia Zhang"
+date: "12/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## data import
+```{r}
+library(tidyverse)
+library(tidylog)
+library(magrittr)
+library(reshape2)
+syllable <- read_csv("tw_man_syllables_1.csv")
+```
+
+### Data filtering
+
+??We now make sure that there are no duplicate measurements within syllables.
+```{r}
+syllable <- syllable %>%
+  group_by(syllable_id) %>%
+  #filter(!duplicated(time)) %>%
+  mutate(syllable_tone = str_remove_all(syllable_tone, "[NULL|/]")) %>%
+  ungroup()
+unique(syllable[c("syllable_tone")])
+summarise(syllable, syllable_id)
+unique(syllable[c("word_id")])
+```
+
+
+## Filtering based on durations
+
+How about syllable durations? Should filter overly long / short.
+
+First adding a syllable duration variable + plotting.
+
+```{r}
+
+syllable %>%
+ggplot(aes(x=syllable_duration)) +
+  geom_histogram() +
+  scale_x_log10() +
+  xlim(0,0.6)
+```
+
+```{r}
+# tails: lower end
+syllable %>%
+  group_by(syllable_id) %>%
+  summarise(syllable_duration=syllable_duration[1]) %>%
+  filter(syllable_duration < 0.08) %>%
+  ungroup() %>%
+ggplot(aes(x=syllable_duration)) +
+  geom_histogram() # 0.06 makes sense as lower limit
+
+# tails: upper
+syllable %>%
+  group_by(syllable_id) %>%
+  summarise(syllable_duration=syllable_duration[1]) %>%
+  filter(syllable_duration > 0.4) %>%
+  ungroup() %>%
+ggplot(aes(x=syllable_duration)) +
+  geom_histogram() # 0.8 makes sense as upper limit
+```
+
+Based on the plot, the lower / upper limits are determined as 0.06 and 0.8 s.
+
+```{r}
+syllable <- syllable %>%
+  filter(syllable_duration >= 0.06,
+         syllable_duration <= 0.8)
+```
+Remove any syllable with a log duration more than three SDs away from the mean (durations are roughly normally distributed in log space, as shown by the plots above)
+
+```{r}
+syllable <- syllable %>% 
+  filter(
+    log(syllable_duration) > 
+      mean(log(syllable_duration)) - 
+      3*sd(log(syllable_duration)),
+    log(syllable_duration) < 
+      mean(log(syllable_duration)) +
+      3*sd(log(syllable_duration))
+  )
+```
+
+plot log duration again
+```{r}
+
+syllable %>%
+ggplot(aes(x=syllable_duration)) +
+  geom_histogram() +
+  scale_x_log10()
+```
+## Filtering based on intensity
+
+How about intensity? Should filter overly high/low.
+
+First adding a intensity variable + plotting.
+
+```{r}
+
+syllable %>%
+ggplot(aes(x=syllable_intensity)) +
+  geom_histogram() +
+  scale_x_log10() +
+  xlim(30,100)
+```
+
+```{r}
+# tails: lower end
+syllable %>%
+  group_by(syllable_id) %>%
+  summarise(syllable_intensity=syllable_intensity[1]) %>%
+  filter(syllable_intensity < 45) %>%
+  ungroup() %>%
+ggplot(aes(x=syllable_intensity)) +
+  geom_histogram() # 35 makes sense as lower limit
+
+# tails: upper
+syllable %>%
+  group_by(syllable_id) %>%
+  summarise(syllable_intensity=syllable_intensity[1]) %>%
+  filter(syllable_intensity > 84) %>%
+  ungroup() %>%
+ggplot(aes(x=syllable_intensity)) +
+  geom_histogram() # 86 makes sense as upper limit
+```
+
+Based on the plot, the lower / upper limits are determined as 35 and 86 dB.
+
+```{r}
+syllable <- syllable %>%
+  filter(syllable_intensity > 35,
+         syllable_intensity < 86)
+```
+Remove any syllable with a log intensity more than three SDs away from the mean (intensities are roughly normally distributed in log space, as shown by the plots above)
+
+```{r}
+syllable <- syllable %>% 
+  filter(
+    log(syllable_intensity) > 
+      mean(log(syllable_intensity)) - 
+      3*sd(log(syllable_intensity)),
+    log(syllable_intensity) < 
+      mean(log(syllable_intensity)) +
+      3*sd(log(syllable_intensity))
+  )
+```
+
+plot log intensity again
+```{r}
+
+syllable %>%
+ggplot(aes(x=syllable_intensity)) +
+  geom_histogram() +
+  scale_x_log10() +
+  xlim(30,100)
+```
+Should we filter for duration within speakers? Let's plot duration distributions by speaker.
+
+```{r}
+syllable_dur <- syllable %>%
+  group_by(speaker, syllable_id) %>%
+  summarise(syllable_duration=syllable_duration[1]) %>%
+  ungroup()
+
+ggplot(syllable_dur, aes(x=syllable_duration)) +
+  facet_wrap(~speaker) +
+  geom_histogram(bins=20) +
+  scale_x_log10()
+```
+Should we filter for intensity within speakers? Let's plot intensity distributions by speaker.
+
+```{r}
+syllable_int <- syllable %>%
+  group_by(speaker, syllable_id) %>%
+  summarise(syllable_intensity=syllable_intensity[1]) %>%
+  ungroup()
+
+ggplot(syllable_int, aes(x=syllable_intensity)) +
+  facet_wrap(~speaker) +
+  geom_histogram(bins=20) +
+  scale_x_log10()
+```
+
+## filter read speech ?
+# ```{r}
+# syllable <- syllable %>%
+#   #rownames_to_column("file") %>% 
+#   filter(!str_detect(file, 'r') )
+# view(syllable)
+# ```
+
+```{r}
+unique(syllable[c("syllable_id")])
+unique(syllable[c("word_id")])
+```
+
+
+## plotting
+First plot...
+see if syllable duration and intensity will be different in diff position (word-initial/final)
+```{r}
+syllable_dur <- syllable %>%
+  #rownames_to_column("file") %>% 
+  #filter(str_detect(file, 'r') )%>% 
+  #filter(!grep('r', file)) %>%
+  group_by(position_in_word, syllable_id) %>%
+  summarise(syllable_duration=syllable_duration[1]) %>%
+  ungroup()
+
+
+ggplot(syllable_dur, aes(x= factor(position_in_word, level = c('initial', 'final')), y=syllable_duration, fill=position_in_word)) +
+  geom_boxplot() +
+  ylim(0.06, 0.4) +
+  # adding the median separately as a point
+  stat_summary(fun=mean, geom="point", shape=16) +
+  labs(x="Positions in disyllabic words", y = "Syllable duration")
+  #scale_y_log10()+
+
+ggsave("Plot of duration by positsions in words.png")
+aggregate(syllable_dur$syllable_duration, list(syllable_dur$position_in_word), FUN=mean)
+
+##reorder final and initial
+```
+
+```{r}
+syllable_int <- syllable %>%
+  group_by(position_in_word, syllable_id) %>%
+  summarise(syllable_intensity=syllable_intensity[1]) %>%
+  ungroup()
+
+ggplot(syllable_int, aes(x=factor(position_in_word, level = c('initial', 'final')), y=syllable_intensity, fill=position_in_word)) +
+  geom_boxplot() +
+  #ylim(0.06, 0.4) +
+  stat_summary(fun=mean, geom="point", shape=16) +
+  labs(x="Positions in disyllabic words", y = "Intensity")
+  #scale_y_log10()+
+
+ggsave("Plot of intensity by positions in words.png")
+
+aggregate(syllable_int$syllable_intensity, list(syllable_int$position_in_word), FUN=mean)
+```
+So as expected, duration and intensity does not have a significant difference depending on the syllable position in Taiwannese Mandarin
+
+Now plot syllable duration and intensity by different tone values
+Duration:
+```{r}
+dur_by_tone <- syllable %>%
+  group_by(syllable_tone, syllable_id) %>%
+  summarise(syllable_duration=syllable_duration[1]) %>%
+  ungroup()
+
+ggplot(dur_by_tone, aes(x=syllable_tone, y=syllable_duration, fill=syllable_tone)) +
+  geom_boxplot() +
+  ylim(0.06, 0.4) +
+  # adding the median separately as a point
+  stat_summary(fun=mean, geom="point", shape=16) +
+  labs(x="Tone types", y = "Syllable duration")
+  #scale_y_log10()+
+
+ggsave("Plot of duration by tone types.png")
+
+aggregate(dur_by_tone$syllable_duration, list(dur_by_tone$syllable_tone), FUN=mean)
+```
+
+Intensity:
+```{r}
+int_by_tone <- syllable %>%
+  group_by(syllable_tone, syllable_id) %>%
+  summarise(syllable_intensity=syllable_intensity[1]) %>%
+  ungroup()
+
+ggplot(int_by_tone, aes(x=syllable_tone, y=syllable_intensity, fill=syllable_tone)) +
+  geom_boxplot() +
+  #ylim(0.06, 0.4) +
+  # adding the median separately as a point
+  stat_summary(fun=mean, geom="point", shape=16) +
+  labs(x="Tone types", y = "Intensity")
+  #scale_y_log10()+
+
+ggsave("Plot of intensity by tone types.png")
+
+aggregate(int_by_tone$syllable_intensity, list(int_by_tone$syllable_tone), FUN=mean)
+```
+
+Then I want to see how the duration of initial and final syllables look like for each tone group
+```{r}
+dur_by_tone_group <- syllable %>%
+  #add tone value columns
+  mutate(first_tone = if_else(position_in_word == 'initial', syllable_tone, 'NA')) %>%
+  mutate(second_tone = if_else(position_in_word == 'final', syllable_tone, 'NA')) %>%
+  
+  #add duration columns
+  mutate(first = if_else(position_in_word == 'initial', syllable_duration, 0)) %>%
+  mutate(second = if_else(position_in_word == 'final', syllable_duration, 0)) %>%
+  
+
+  #group by words
+  group_by(word) %>%
+  #summarize 1st and 2nd for each word, and calculate mean duration for initial & second syllable for each word
+  #summarise_at(vars(first), list(name = mean)) %>%
+  summarise(first_tone=first_tone[1], second_tone = second_tone[2], first = mean(first) * 2, second = mean(second) *2)  %>%
+  ungroup()
+  
+#view(dur_by_tone_group)  
+
+#add a tone group column for each word
+dur_by_tone_group$tone_group <- paste(dur_by_tone_group$first_tone, dur_by_tone_group$second_tone)
+
+#view(dur_by_tone_group)
+
+
+
+
+#list(dur_by_tone_group$tone_group)
+#unique(dur_by_tone_group[c("tone_group")])
+```
+For now, remove all words that have NA (don't know why lots of tones are not encoded) --- each removes 2~3% rows
+```{r}
+dur_by_tone_group <- dur_by_tone_group %>%
+  filter(!first_tone %in% c('NA')) %>%
+  filter(!second_tone %in% c('NA')) %>%
+  drop_na() %>%
+  filter(!tone_group %in% c('t5 t1', 't5 t2', 't5 t3', 't5 t4'))
+
+#view(dur_by_tone_group)
+```
+
+
+```{r}
+dur_by_tone_group <- dur_by_tone_group %>%
+  #group by tone group
+  group_by(tone_group)
+  #ungroup()
+table(dur_by_tone_group$tone_group)
+#view(dur_by_tone_group)
+
+#melt the data, create a new column encode first/second syll's duration, and a value column
+dur_by_tone_group <- melt(dur_by_tone_group)
+#view(dur_by_tone_group)
+
+
+ggplot(dur_by_tone_group, aes(x = variable, y = value, fill=variable)) +
+  facet_wrap(~tone_group) +
+  geom_boxplot() +
+  stat_summary(fun=mean, geom="point", shape=16, size = 1) +
+  ylim(0.1,0.3) +
+  labs(x="Syllable position", y = "Syllable duration")
+ggsave("Plot of duration by tone group.png")
+
+```
+
+Then I want to see how the intensity of initial and final syllables look like for each tone group
+```{r}
+int_by_tone_group <- syllable %>%
+  #add tone value columns
+  mutate(first_tone = if_else(position_in_word == 'initial', syllable_tone, 'NA')) %>%
+  mutate(second_tone = if_else(position_in_word == 'final', syllable_tone, 'NA')) %>%
+  
+  #add intensity columns
+  mutate(first = if_else(position_in_word == 'initial', syllable_intensity, 0)) %>%
+  mutate(second = if_else(position_in_word == 'final', syllable_intensity, 0)) %>%
+
+  #group by words
+  group_by(word) %>%
+  #summarize 1st and 2nd for each word, and calculate mean intensity for initial & second syllable for each word
+  summarise(first_tone=first_tone[1], second_tone = second_tone[2], first = mean(first) * 2, second = mean(second) * 2)  %>%
+  ungroup()
+  
+#add a tone group column for each word
+int_by_tone_group$tone_group <- paste(int_by_tone_group$first_tone, int_by_tone_group$second_tone)
+
+#view(int_by_tone_group)
+
+
+
+
+#list(dur_by_tone_group$tone_group)
+#unique(dur_by_tone_group[c("tone_group")])
+```
+For now, remove all words that have NA (don't know why lots of tones are not encoded) --- each removes 2~3% rows
+(i.e. same words as in the previous duration measurements )
+```{r}
+int_by_tone_group <- int_by_tone_group %>%
+  filter(!first_tone %in% c('NA')) %>%
+  filter(!second_tone %in% c('NA')) %>%
+  drop_na() %>%
+  filter(!tone_group %in% c('t5 t1', 't5 t2', 't5 t3', 't5 t4'))
+#filter tone group that are 51, 52, 53, 54
+
+#view(int_by_tone_group)
+```
+
+Now it's time to encode first/second syllable duration for each word
+```{r}
+int_by_tone_group <- int_by_tone_group %>%
+  #group by tone group
+  group_by(tone_group)
+  #ungroup()
+
+
+#melt the data, create a new column encode first/second syll's duration, and a value column
+int_by_tone_group <- melt(int_by_tone_group)
+#view(int_by_tone_group)
+
+
+ggplot(int_by_tone_group, aes(x = variable, y = value, fill=variable)) +
+  facet_wrap(~tone_group) +
+  geom_boxplot() +
+  stat_summary(fun=mean, geom="point", shape=16, size = 1) +
+  ylim(60,80) +
+  labs(x="Syllable position", y = "Intensity")
+
+ggsave("Plot of intensity by tone group.png")
+
+```
+
+## look at t3t5 and t2t5 tone groups: what lexical items are included
+```{r}
+int_by_tone_group <- int_by_tone_group %>%
+  filter(tone_group %in% c('t3 t5')) %>%
+  summarize(word, tone_group)
+
+#view(int_by_tone_group)
+```
